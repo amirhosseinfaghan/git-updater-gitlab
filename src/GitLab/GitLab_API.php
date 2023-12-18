@@ -165,7 +165,7 @@ class GitLab_API extends API implements API_Interface {
 	 * @return string|bool
 	 */
 	public function get_release_asset() {
-		return $this->get_api_release_asset( 'gitlab', "/projects/{$this->response['project_id']}/jobs/artifacts/{$this->type->newest_tag}/download" );
+		return $this->get_api_release_asset( 'gitlab', "/projects/{$this->response['project_id']}/jobs/artifacts/main/download" );
 	}
 
 	/**
@@ -192,8 +192,8 @@ class GitLab_API extends API implements API_Interface {
 			if ( $release_asset ) {
 				return $release_asset;
 			}
-
-			$ci_job_endpoint = $this->get_api_url( "/projects/{$this->response['project_id']}/jobs/artifacts/{$this->type->newest_tag}/download" );
+			
+			$ci_job_endpoint = $this->get_api_url( "/projects/{$this->response['project_id']}/jobs/artifacts/main/download" );
 			$ci_job_endpoint = add_query_arg( [ 'job' => $this->type->ci_job ], $ci_job_endpoint );
 			$this->set_repo_cache( 'release_asset', $ci_job_endpoint );
 
@@ -202,7 +202,7 @@ class GitLab_API extends API implements API_Interface {
 
 		// If branch is primary branch (default) and tags are used, use newest tag.
 		if ( $this->type->primary_branch === $this->type->branch && ! empty( $this->type->tags ) ) {
-			$endpoint = add_query_arg( 'sha', $this->type->newest_tag, $endpoint );
+			$endpoint = add_query_arg( 'sha', 'main', $endpoint );
 		}
 
 		// Create endpoint for branch switching.
