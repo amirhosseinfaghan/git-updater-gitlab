@@ -11,6 +11,8 @@
 namespace Fragen\Git_Updater\API;
 
 use Fragen\Singleton;
+use stdClass;
+use WP_Dismiss_Notice;
 
 /*
  * Exit if called directly.
@@ -31,12 +33,12 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Constructor.
 	 *
-	 * @param null|\stdClass $type plugin|theme.
+	 * @param null|stdClass $type plugin|theme.
 	 */
 	public function __construct( $type = null ) {
 		parent::__construct();
 		$this->type     = $type;
-		$this->response = $this->get_repo_cache();
+		$this->response = [];
 		$this->set_default_credentials();
 		$this->settings_hook( $this );
 		$this->add_settings_subtab();
@@ -85,20 +87,20 @@ class GitLab_API extends API implements API_Interface {
 	public function get_remote_tag() {
 		$id = $this->get_gitlab_id();
 
-		return $this->get_remote_api_tag( "/projects/{$id}/repository/tags" );
+		return $this->get_remote_api_tag( 'gitlab', "/projects/{$id}/repository/tags" );
 	}
 
 	/**
 	 * Read the remote CHANGES.md file.
 	 *
-	 * @param string $changes Changelog filename.
+	 * @param null $changes The changelog filename - deprecated.
 	 *
 	 * @return bool
 	 */
 	public function get_remote_changes( $changes ) {
 		$id = $this->get_gitlab_id();
 
-		return $this->get_remote_api_changes( 'gitlab', $changes, "/projects/{$id}/repository/files/{$changes}" );
+		return $this->get_remote_api_changes( 'gitlab', $changes, "/projects/{$id}/repository/files/:changelog" );
 	}
 
 	/**
@@ -109,7 +111,7 @@ class GitLab_API extends API implements API_Interface {
 	public function get_remote_readme() {
 		$id = $this->get_gitlab_id();
 
-		return $this->get_remote_api_readme( 'gitlab', "/projects/{$id}/repository/files/readme.txt" );
+		return $this->get_remote_api_readme( 'gitlab', "/projects/{$id}/repository/files/:readme" );
 	}
 
 	/**
@@ -138,7 +140,7 @@ class GitLab_API extends API implements API_Interface {
 			}
 		}
 
-		if ( $this->validate_response( $response ) ) {
+		if ( $this->validate_response( $response ) || is_string( $response ) ) {
 			return false;
 		}
 
@@ -168,6 +170,27 @@ class GitLab_API extends API implements API_Interface {
 		return $this->get_api_release_asset( 'gitlab', "/projects/{$this->response['project_id']}/jobs/artifacts/main/download" );
 	}
 
+	/**
+	 * Return list of repository assets.
+	 *
+	 * @return array
+	 */
+	public function get_repo_assets() {
+		$id = $this->get_gitlab_id();
+
+		return $this->get_remote_api_assets( 'gitlab', "/projects/{$id}/repository/files/:assets" );
+	}
+
+	/**
+	 * Return list of files at repo root.
+	 *
+	 * @return array
+	 */
+	public function get_repo_contents() {
+		$id = $this->get_gitlab_id();
+
+		return $this->get_remote_api_contents( 'gitlab', "/projects/{$id}/repository/tree" );
+	}
 	/**
 	 * Construct $this->type->download_link using GitLab API v4.
 	 *
@@ -245,6 +268,7 @@ class GitLab_API extends API implements API_Interface {
 			case 'download_link':
 				break;
 			case 'file':
+			case 'assets':
 			case 'changes':
 			case 'readme':
 				$endpoint = add_query_arg( 'ref', $git->type->branch, $endpoint );
@@ -277,8 +301,9 @@ class GitLab_API extends API implements API_Interface {
 	 * @return string|int
 	 */
 	public function get_gitlab_id() {
-		$id       = null;
-		$response = isset( $this->response['project_id'] ) ? $this->response['project_id'] : false;
+		$id             = null;
+		$this->response = $this->get_repo_cache( $this->type->slug );
+		$response       = isset( $this->response['project_id'] ) ? $this->response['project_id'] : false;
 
 		if ( ! $response ) {
 			self::$method = 'projects';
@@ -306,9 +331,9 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Parse API response call and return only array of tag numbers.
 	 *
-	 * @param \stdClass|array $response Response from API call for tags.
+	 * @param stdClass|array $response Response from API call for tags.
 	 *
-	 * @return \stdClass|array Array of tag numbers, object is error.
+	 * @return stdClass|array Array of tag numbers, object is error.
 	 */
 	public function parse_tag_response( $response ) {
 		if ( $this->validate_response( $response ) ) {
@@ -331,7 +356,7 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Parse API response and return array of meta variables.
 	 *
-	 * @param \stdClass|array $response Response from API call.
+	 * @param stdClass|array $response Response from API call.
 	 *
 	 * @return array $arr Array of meta variables.
 	 */
@@ -348,6 +373,7 @@ class GitLab_API extends API implements API_Interface {
 				$arr['private']      = isset( $e->visibility ) && 'private' === $e->visibility ? true : false;
 				$arr['private']      = isset( $e->public ) ? ! $e->public : $arr['private'];
 				$arr['last_updated'] = $e->last_activity_at;
+				$arr['added']        = $e->created_at;
 				$arr['watchers']     = 0;
 				$arr['forks']        = $e->forks_count;
 				$arr['open_issues']  = isset( $e->open_issues_count ) ? $e->open_issues_count : 0;
@@ -360,9 +386,9 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Parse API response and return array with changelog in base64.
 	 *
-	 * @param \stdClass|array $response Response from API call.
+	 * @param stdClass|array $response Response from API call.
 	 *
-	 * @return array|\stdClass $arr Array of changes in base64, object if error.
+	 * @return array|stdClass $arr Array of changes in base64, object if error.
 	 */
 	public function parse_changelog_response( $response ) {
 		if ( $this->validate_response( $response ) ) {
@@ -385,7 +411,7 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Parse API response and return array of branch data.
 	 *
-	 * @param \stdClass $response API response.
+	 * @param stdClass $response API response.
 	 *
 	 * @return array Array of branch data.
 	 */
@@ -406,24 +432,78 @@ class GitLab_API extends API implements API_Interface {
 	/**
 	 * Parse tags and create download links.
 	 *
-	 * @param \stdClass|array $response  Response from API call.
-	 * @param array           $repo_type Array of repo data.
+	 * @param stdClass|array $response  Response from API call.
+	 * @param array          $repo_type Array of repo data.
 	 *
 	 * @return array
 	 */
 	protected function parse_tags( $response, $repo_type ) {
-		$tags     = [];
-		$rollback = [];
+		$tags = [];
 
 		foreach ( (array) $response as $tag ) {
-			$download_link    = "/projects/{$this->get_gitlab_id()}/repository/archive.zip";
-			$download_link    = $this->get_api_url( $download_link );
-			$download_link    = add_query_arg( 'sha', $tag, $download_link );
-			$tags[]           = $tag;
-			$rollback[ $tag ] = $download_link;
+			$download_link = "/projects/{$this->get_gitlab_id()}/repository/archive.zip";
+			$download_link = $this->get_api_url( $download_link );
+
+			// Ignore leading 'v' and skip anything with dash or words.
+			if ( ! preg_match( '/[^v]+[-a-z]+/', $tag ) ) {
+				$tags[ $tag ] = add_query_arg( 'sha', $tag, $download_link );
+
+			}
+			uksort( $tags, fn ( $a, $b ) => version_compare( ltrim( $b, 'v' ), ltrim( $a, 'v' ) ) );
 		}
 
-		return [ $tags, $rollback ];
+		return $tags;
+	}
+
+	/**
+	 * Parse remote root files/dirs.
+	 *
+	 * @param stdClass|array $response Response from API call.
+	 *
+	 * @return array
+	 */
+	protected function parse_contents_response( $response ) {
+		$files = [];
+		$dirs  = [];
+		foreach ( $response as $content ) {
+			if ( property_exists( $content, 'type' ) && 'blob' === $content->type ) {
+				$files[] = $content->name;
+			}
+			if ( property_exists( $content, 'type' ) && 'tree' === $content->type ) {
+				$dirs[] = $content->name;
+			}
+		}
+
+		return [
+			'files' => $files,
+			'dirs'  => $dirs,
+		];
+	}
+
+	/**
+	 * Parse remote assets directory.
+	 *
+	 * @param stdClass|array $response Response from API call.
+	 *
+	 * @return stdClass|array
+	 */
+	protected function parse_asset_dir_response( $response ) {
+		$assets = [];
+
+		if ( isset( $response->message ) || is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		foreach ( $response as $asset ) {
+			$assets[ $asset->name ] = $asset->download_url;
+		}
+
+		if ( empty( $assets ) ) {
+			$assets['message'] = 'No assets found';
+			$assets            = (object) $assets;
+		}
+
+		return $assets;
 	}
 
 	/**
@@ -572,7 +652,7 @@ class GitLab_API extends API implements API_Interface {
 				'git'   => 'gitlab',
 				'error' => true,
 			];
-			if ( ! \WP_Dismiss_Notice::is_admin_notice_active( 'gitlab-error-1' ) ) {
+			if ( ! WP_Dismiss_Notice::is_admin_notice_active( 'gitlab-error-1' ) ) {
 				return;
 			}
 			?>
@@ -614,13 +694,6 @@ class GitLab_API extends API implements API_Interface {
 		 */
 		if ( ! empty( $install['gitlab_access_token'] ) ) {
 			$install['options'][ $install['repo'] ] = $install['gitlab_access_token'];
-			if ( $gitlab_com ) {
-				$install['options']['gitlab_access_token'] = $install['gitlab_access_token'];
-			}
-		}
-
-		if ( ! empty( static::$options['gitlab_access_token'] ) ) {
-			unset( $install['options']['gitlab_access_token'] );
 		}
 
 		return $install;

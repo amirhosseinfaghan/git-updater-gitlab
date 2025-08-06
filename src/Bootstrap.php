@@ -11,6 +11,7 @@
 namespace Fragen\Git_Updater\GitLab;
 
 use Fragen\Git_Updater\API\GitLab_API;
+use stdClass;
 
 /*
  * Exit if called directly.
@@ -18,14 +19,6 @@ use Fragen\Git_Updater\API\GitLab_API;
 if ( ! defined( 'WPINC' ) ) {
 	die;
 }
-
-// Load textdomain.
-add_action(
-	'init',
-	function () {
-		load_plugin_textdomain( 'git-updater-gitlab' );
-	}
-);
 
 /**
  * Class Bootstrap
@@ -125,11 +118,11 @@ class Bootstrap {
 	/**
 	 * Return git host API object.
 	 *
-	 * @param \stdClass $repo_api Git API object.
-	 * @param string    $git      Name of git host.
-	 * @param \stdClass $repo     Repository object.
+	 * @param stdClass $repo_api Git API object.
+	 * @param string   $git      Name of git host.
+	 * @param stdClass $repo     Repository object.
 	 *
-	 * @return \stdClass
+	 * @return stdClass
 	 */
 	public function set_repo_api( $repo_api, $git, $repo ) {
 		if ( 'gitlab' === $git ) {
@@ -142,8 +135,8 @@ class Bootstrap {
 	/**
 	 * Add API specific repo data.
 	 *
-	 * @param array     $arr  Array of repo API data.
-	 * @param \stdClass $repo Repository object.
+	 * @param array    $arr  Array of repo API data.
+	 * @param stdClass $repo Repository object.
 	 *
 	 * @return array
 	 */
@@ -160,10 +153,10 @@ class Bootstrap {
 	/**
 	 * Add API specific URL data.
 	 *
-	 * @param array     $type          Array of API type data.
-	 * @param \stdClass $repo          Repository object.
-	 * @param bool      $download_link Boolean indicating a download link.
-	 * @param string    $endpoint      API URL endpoint.
+	 * @param array    $type          Array of API type data.
+	 * @param stdClass $repo          Repository object.
+	 * @param bool     $download_link Boolean indicating a download link.
+	 * @param string   $endpoint      API URL endpoint.
 	 *
 	 * @return array
 	 */
@@ -204,6 +197,7 @@ class Bootstrap {
 			$credentials['isset']      = true;
 			$credentials['token']      = isset( $token ) ? $token : null;
 			$credentials['enterprise'] = ! in_array( $headers['host'], [ 'gitlab.com' ], true );
+			$credentials['slug']       = $slug;
 		}
 
 		return $credentials;
@@ -220,13 +214,10 @@ class Bootstrap {
 	public function set_auth_header( $headers, $credentials ) {
 		if ( 'gitlab' === $credentials['type'] ) {
 			// https://gitlab.com/gitlab-org/gitlab-foss/issues/63438.
-			if ( ! $credentials['enterprise'] ) {
-				// Used in GitLab v12.2 or greater.
-				$headers['headers']['Authorization'] = 'Bearer ' . $credentials['token'];
-			} else {
-				// Used in versions prior to GitLab v12.2.
-				$headers['headers']['PRIVATE-TOKEN'] = $credentials['token'];
-			}
+			// Use when GitLab fully supports oAuth 2.0.
+			// $headers['headers']['Authorization'] = 'Bearer ' . $credentials['token'];
+			$headers['headers']['PRIVATE-TOKEN'] = $credentials['token'];
+			$headers['headers']['gitlab']        = $credentials['slug'];
 		}
 
 		return $headers;
@@ -235,10 +226,10 @@ class Bootstrap {
 	/**
 	 * Decode API response.
 	 *
-	 * @param \stdClass $response API response object.
-	 * @param string    $git      Name  of API, eg 'github'.
+	 * @param stdClass $response API response object.
+	 * @param string   $git      Name  of API, eg 'github'.
 	 *
-	 * @return \stdClass
+	 * @return stdClass
 	 */
 	public function decode_response( $response, $git ) {
 		if ( 'gitlab' === $git ) {
@@ -298,10 +289,10 @@ class Bootstrap {
 	/**
 	 * Parse API release asset.
 	 *
-	 * @param \stdClass $response API response object.
-	 * @param string    $git      Name of git host.
-	 * @param string    $request  Schema of API request.
-	 * @param \stdClass $obj      Current class object.
+	 * @param stdClass $response API response object.
+	 * @param string   $git      Name of git host.
+	 * @param string   $request  Schema of API request.
+	 * @param stdClass $obj      Current class object.
 	 *
 	 * @return string
 	 */
@@ -313,7 +304,7 @@ class Bootstrap {
 			if ( $obj->type->ci_job && ! empty( $obj->response['release_asset'] ) ) {
 				$response = $obj->response['release_asset'];
 			}
-			$release_asset                       = new \stdClass();
+			$release_asset                       = new stdClass();
 			$release_asset->browser_download_url = $response;
 			$release_asset->download_count       = 0;
 			$obj->set_repo_cache( 'release_asset_response', $release_asset );
@@ -341,12 +332,12 @@ class Bootstrap {
 	/**
 	 * Filter to return API specific language pack data.
 	 *
-	 * @param \stdClass $response Object of Language Pack API response.
-	 * @param string    $git      Name of git host.
-	 * @param array     $headers  Array of repo headers.
-	 * @param \stdClass $obj      Current class object.
+	 * @param stdClass $response Object of Language Pack API response.
+	 * @param string   $git      Name of git host.
+	 * @param array    $headers  Array of repo headers.
+	 * @param stdClass $obj      Current class object.
 	 *
-	 * @return \stdClass
+	 * @return stdClass
 	 */
 	public function set_language_pack_json( $response, $git, $headers, $obj ) {
 		if ( 'gitlab' === $git ) {
@@ -366,7 +357,7 @@ class Bootstrap {
 	 *
 	 * @param null|string $package URL to language pack.
 	 * @param string      $git     Name of git host.
-	 * @param \stdClass   $locale  Object of language pack data.
+	 * @param stdClass    $locale  Object of language pack data.
 	 * @param array       $headers Array of repository headers.
 	 *
 	 * @return string
